@@ -1,1 +1,1 @@
-g++ -DGLEW_STATIC -std=c++17 ~/code-projects/.libraries/glew-2.2.0/src/glew.c main_sdl.cpp util.cpp run.cpp -lGL -lSDL2
+g++ -DGLEW_STATIC -std=c++17 -o run $GLEW_PATH/glew.c main_sdl.cpp util.cpp run.cpp -lGL -lSDL2

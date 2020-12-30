@@ -18,7 +18,7 @@
 
 // 5 planes per 4 floors per sector
 static uint8_t sLevelData[] = {
-    // 2 full sectors
+    // 2 (almost) full sectors
     1, 0, 0, 1, 1,   1, 1, 1, 1, 1,   1, 1, 1, 1, 1,   1, 1, 1, 1, 1,
     1, 1, 1, 1, 1,   1, 1, 1, 1, 1,   1, 1, 1, 1, 1,   1, 1, 1, 1, 1,
     // 2 sectors with holes
