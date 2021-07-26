@@ -16,16 +16,6 @@
     {{-.5f, -.5f,  0.f}}
 };*/
 
-// 5 planes per 4 floors per sector
-static uint8_t sLevelData[] = {
-    // 2 (almost) full sectors
-    1, 0, 0, 1, 1,   1, 1, 1, 1, 1,   1, 1, 1, 1, 1,   1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1,   1, 1, 1, 1, 1,   1, 1, 1, 1, 1,   1, 1, 1, 1, 1,
-    // 2 sectors with holes
-    1, 0, 1, 0, 1,   1, 1, 1, 1, 1,   0, 0, 0, 0, 0,   1, 1, 1, 1, 1,
-    1, 1, 1, 0, 1,   1, 0, 0, 1, 1,   0, 0, 1, 0, 0,   1, 1, 1, 1, 1,
-};
-
 // Z scaling of the level model
 static float const sLevelZScale = 0.04f;
 
@@ -62,16 +52,13 @@ struct BasicShader {
 };
 
 struct CommonState {
-    uint32_t level_vao, level_vbo;
     LevelInfo level;
-    size_t level_vtx_count;
-    float floorY, floorW, floorXl, floorXr;
     BasicShader shader;
 };
 
 struct EditorState {
     CommonState* common;
-    uint32_t cur_sector, cur_spot;
+    uint32_t cur_segment, cur_sector, cur_spot;
     float curZ;
 };
 
@@ -86,13 +73,16 @@ static void editor_init(void* common_ctx, void* ctx) {
     EditorState& s_ctx = *reinterpret_cast<EditorState*>(ctx);
 
     s_ctx.common = &s_common;
-    s_ctx.cur_sector = s_ctx.cur_spot = 0;
+    s_ctx.cur_segment = s_ctx.cur_sector = s_ctx.cur_spot = 0;
 
     s_ctx.curZ = 0.0f;
 }
 
 static void editor_input(SDL_Event& ev, void* ctx) {
     EditorState& state = *reinterpret_cast<EditorState*>(ctx);
+    LevelInfo& level = state.common->level;
+    GeometrySegment& seg = level.segments[state.cur_segment];
+    uint32_t num_slots = seg.floors * seg.floor_planes;
     if (ev.type == SDL_KEYDOWN) {
         if (ev.key.keysym.sym == SDLK_w) {
             state.curZ += 0.02f;
@@ -106,59 +96,62 @@ static void editor_input(SDL_Event& ev, void* ctx) {
                 new_spot = num_slots - 1;
             }
             // Mark the new spot
-            state.common->level.sector_data[state.cur_sector].data[state.cur_spot] ^= 2;
-            state.common->level.sector_data[state.cur_sector].data[new_spot] ^= 2;
+            seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
+            seg.data[state.cur_sector * num_slots + new_spot] ^= 2;
             state.cur_spot = new_spot;
-            // Regenerate scene
-            GenerateLevelSceneModel(state.common->level, state.common->level_vbo, state.common->level_vtx_count);
+            // Regenerate segment
+            GenerateLevelSceneModel(seg);
         } else if (ev.key.keysym.sym == SDLK_RIGHT) {
             uint32_t new_spot = state.cur_spot;
             if (++new_spot == num_slots) {
                 new_spot = 0;
             }
             // Mark the new spot
-            state.common->level.sector_data[state.cur_sector].data[state.cur_spot] ^= 2;
-            state.common->level.sector_data[state.cur_sector].data[new_spot] ^= 2;
+            seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
+            seg.data[state.cur_sector * num_slots + new_spot] ^= 2;
             state.cur_spot = new_spot;
             // Regenerate scene
-            GenerateLevelSceneModel(state.common->level, state.common->level_vbo, state.common->level_vtx_count);
+            GenerateLevelSceneModel(seg);
         } else if (ev.key.keysym.sym == SDLK_DOWN) {
             uint32_t new_sector = state.cur_sector;
             if (new_sector-- != 0) {
                 // Mark the new spot
-                state.common->level.sector_data[state.cur_sector].data[state.cur_spot] ^= 2;
-                state.common->level.sector_data[new_sector].data[state.cur_spot] ^= 2;
+                seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
+                seg.data[new_sector * num_slots + state.cur_spot] ^= 2;
                 state.cur_sector = new_sector;
                 // Regenerate scene
-                GenerateLevelSceneModel(state.common->level, state.common->level_vbo, state.common->level_vtx_count);
-            }
+                GenerateLevelSceneModel(seg);
+            } // TODO: Move between segments
         } else if (ev.key.keysym.sym == SDLK_UP) {
             uint32_t new_sector = state.cur_sector;
-            if (++new_sector >= state.common->level.num_sectors) {
-                state.common->level.sector_data.emplace_back();
-                ++state.common->level.num_sectors;
+            if (++new_sector >= seg.sectors) {
+                // TODO: Move between segments if present
+                seg.data.resize(seg.data.size() + num_slots);
+                ++seg.sectors;
             }
             // Mark the new spot
-            state.common->level.sector_data[state.cur_sector].data[state.cur_spot] ^= 2;
-            state.common->level.sector_data[new_sector].data[state.cur_spot] ^= 2;
+            seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
+            seg.data[new_sector * num_slots + state.cur_spot] ^= 2;
             state.cur_sector = new_sector;
             // Regenerate scene
-            GenerateLevelSceneModel(state.common->level, state.common->level_vbo, state.common->level_vtx_count);
+            GenerateLevelSceneModel(seg);
         } else if (ev.key.keysym.sym == SDLK_SPACE) {
             // Set/reset the spot
-            state.common->level.sector_data[state.cur_sector].data[state.cur_spot] ^= 1;
+            seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 1;
             // Regenerate scene
-            GenerateLevelSceneModel(state.common->level, state.common->level_vbo, state.common->level_vtx_count);
+            GenerateLevelSceneModel(seg);
         } else if (ev.key.keysym.sym == SDLK_p) {
             DumpLevelToFile(state.common->level, "level.dat");
             std::puts("Dumped level to file 'level.dat'");
         } else if (ev.key.keysym.sym == SDLK_l) {
-            state.common->level = LoadLevelFromFile("level.dat");
-            state.cur_sector = 0;
-            state.cur_spot = 0;
-            state.common->level.sector_data[state.cur_sector].data[state.cur_spot] ^= 2;
-            GenerateLevelSceneModel(state.common->level, state.common->level_vbo, state.common->level_vtx_count);
-            std::puts("Loaded level 'level.dat'");
+            if (LoadLevelFromFile(level, "level.dat")) {
+                state.cur_segment = 0;
+                state.cur_sector = 0;
+                state.cur_spot = 0;
+                level.segments[0].data[0] ^= 2;
+                GenerateLevelSceneModel(level.segments[0]);
+                std::puts("Loaded level 'level.dat'");
+            }
         }
     }
 }
@@ -169,16 +162,16 @@ static void editor_render(void* ctx) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glUseProgram(state.common->shader.prog);
-    glBindVertexArray(state.common->level_vao);
     glUniform3f(state.common->shader.loc_uScale, 1.f, 1.f, sLevelZScale);
     glUniform3f(state.common->shader.loc_uDisplacement, 0.f, 0.f, state.curZ);
-    glDrawArrays(GL_TRIANGLES, 0, state.common->level_vtx_count);
+    RenderLevel(state.common->level);
 }
 
 static void editor_switch(void* ctx) {
     EditorState& state = *reinterpret_cast<EditorState*>(ctx);
-    state.common->level.sector_data[state.cur_sector].data[state.cur_spot] ^= 2;
-    GenerateLevelSceneModel(state.common->level, state.common->level_vbo, state.common->level_vtx_count);
+    GeometrySegment& seg = state.common->level.segments[state.cur_segment];
+    seg.data[state.cur_sector * seg.floors * seg.floor_planes + state.cur_spot] ^= 2;
+    GenerateLevelSceneModel(seg);
 }
 
 static void game_init(void* common_ctx, void* ctx) {
@@ -215,14 +208,13 @@ static void game_render(void* ctx) {
     state.curZ += state.speed;
 
     glUseProgram(state.common->shader.prog);
-    glBindVertexArray(state.common->level_vao);
     glUniform3f(state.common->shader.loc_uScale, 1.f, 1.f, sLevelZScale);
     glUniform3f(state.common->shader.loc_uDisplacement, 0.f, 0.f, state.curZ + zfactor);
-    glDrawArrays(GL_TRIANGLES, 0, state.common->level_vtx_count);
+    RenderLevel(state.common->level);
 
     glBindVertexArray(state.player_vao);
-    glUniform3f(state.common->shader.loc_uScale, state.common->floorW, .4f, sLevelZScale);
-    glUniform3f(state.common->shader.loc_uDisplacement, 0., state.common->floorY, zfactor);
+    glUniform3f(state.common->shader.loc_uScale, state.common->level.segments[0].pwidth, .4f, sLevelZScale);
+    glUniform3f(state.common->shader.loc_uDisplacement, 0., state.common->level.segments[0].yval, zfactor);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
@@ -234,20 +226,11 @@ static void game_switch(void* ctx) {
 
 static void common_init(CommonState& state) {
     // Init scene
-    state.level = LoadLevelFromArray(4, sLevelData);
+    state.level = LoadBlankLevel();
+    SetupSegmentBuffers(state.level.segments[0]);
 
-    glGenVertexArrays(1, &state.level_vao);
     // Load level geometry
-    glGenBuffers(1, &state.level_vbo);
-    GenerateLevelSceneModel(state.level, state.level_vbo, state.level_vtx_count);
-
-    // Prepare vertex arrays
-    glBindVertexArray(state.level_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, state.level_vbo);
-    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(Vtx), reinterpret_cast<const void*>(offsetof(Vtx, pos)));
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, false, sizeof(Vtx), reinterpret_cast<const void*>(offsetof(Vtx, col)));
-    glEnableVertexAttribArray(1);
+    GenerateLevelSceneModel(state.level.segments[0]);
 
     // Load shaders
     uint32_t vs = LoadShaderFromFile("basic.vs.glsl", GL_VERTEX_SHADER);
@@ -266,17 +249,15 @@ static void common_init(CommonState& state) {
     state.shader.prog = shdr;
     state.shader.loc_uScale = glGetUniformLocation(shdr, "uScale");
     state.shader.loc_uDisplacement = glGetUniformLocation(shdr, "uDisplacement");
-
-    GetFloorProperties(state.floorY, state.floorW, state.floorXl, state.floorXr);
 }
 
 static void common_finish(CommonState& state, EditorState& s_editor, PlayingState& s_playing) {
-    glDeleteVertexArrays(1, &state.level_vao);
+    CleanupLevel(state.level);
     glDeleteVertexArrays(1, &s_playing.player_vao);
-    glDeleteBuffers(1, &state.level_vbo);
     glDeleteBuffers(1, &s_playing.player_vbo);
 }
 
+#ifdef DISPLAY_SDL
 int main() {
     static GameStateDef state_def_editor {
         &editor_init,
@@ -352,3 +333,4 @@ int main() {
 
     SDL_Quit();
 }
+#endif

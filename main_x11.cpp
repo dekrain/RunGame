@@ -6,7 +6,7 @@
 #include <GL/glx.h>
 #include <GL/glu.h>
 
-void test_draw_quad() {
+static void test_draw_quad() {
     // Clear screen
     glClearColor(1.f, 1.f, 1.f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -29,6 +29,7 @@ void test_draw_quad() {
     glEnd();
 }
 
+#ifdef DISPLAY_X11
 int main() {
     Display* xdsp = XOpenDisplay(nullptr);
     if (!xdsp) {
@@ -87,3 +88,4 @@ int main() {
     XDestroyWindow(xdsp, wnd);
     XCloseDisplay(xdsp);
 }
+#endif
