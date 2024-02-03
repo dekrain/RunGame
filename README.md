@@ -1,6 +1,6 @@
 This is a recreation of a popular web browser game "Run"
 
-To compile using `compile.sh` script you must provide a `GLEW_PATH` environment variable pointing to GLEW static library source code directory.
+To compile using `compile.sh` script you must provide a `GLEW_PATH` environment variable pointing to GLEW library root directory.
 
 ## Controls
 General:
