@@ -18,6 +18,6 @@ While in playing mode:
 -   Currently nothing (change state to reset game)
 
 ## Misc.
-To change the shape of the level (including number of floors and number of tiles per floor), edit the `run.hpp` file, by changing the `num_floors` and `num_floor_planes` constants respectively (don't modify the `num_slots` constant!). The default level `sLevelData` inside `main_sdl.cpp` must be changed accordingly to fit the desired layout (the total numbers of tiles per section in the array must match to preserve well-defined behaviour of level loader).
+To change the shape of the level (including number of floors and number of tiles per floor), edit the `run.hpp` file, by changing the `num_floors` and `num_floor_planes` constants respectively (don't modify the `num_slots` constant!). The default level `sLevelData` inside `main.cpp` must be changed accordingly to fit the desired layout (the total numbers of tiles per section in the array must match to preserve well-defined behaviour of level loader).
 
 Default "checkerboard" level is included in the `level.dat` file, but it can be overwritten.
