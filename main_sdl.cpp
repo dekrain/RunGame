@@ -3,12 +3,11 @@
 #include <array>
 #include <cmath>
 
-#include <SDL2/SDL.h>
-
 #include <GL/glew.h>
 
 #include "util.hpp"
 #include "run.hpp"
+#include "wnd.hpp"
 
 /*static Vtx sPolygonData[] = {
     {{ .0f,  .5f, -.1f}},
@@ -78,19 +77,19 @@ static void editor_init(void* common_ctx, void* ctx) {
     s_ctx.curZ = 0.0f;
 }
 
-static void editor_input(SDL_Event& ev, void* ctx) {
+static void editor_input(WinEvent const& ev, void* ctx) {
     EditorState& state = *reinterpret_cast<EditorState*>(ctx);
     LevelInfo& level = state.common->level;
     GeometrySegment& seg = level.segments[state.cur_segment];
     uint32_t num_slots = seg.floors * seg.floor_planes;
-    if (ev.type == SDL_KEYDOWN) {
-        if (ev.key.keysym.sym == SDLK_w) {
+    if (ev.type == EventType::KeyDown) {
+        if (ev.key.lkey == LogicalKey::W) {
             state.curZ += 0.02f;
-        } else if (ev.key.keysym.sym == SDLK_s) {
+        } else if (ev.key.lkey == LogicalKey::S) {
             state.curZ -= 0.02f;
         }
         // select
-        else if (ev.key.keysym.sym == SDLK_LEFT) {
+        else if (ev.key.lkey == LogicalKey::ArrowLeft) {
             uint32_t new_spot = state.cur_spot;
             if (new_spot-- == 0) {
                 new_spot = num_slots - 1;
@@ -101,7 +100,7 @@ static void editor_input(SDL_Event& ev, void* ctx) {
             state.cur_spot = new_spot;
             // Regenerate segment
             GenerateLevelSceneModel(seg);
-        } else if (ev.key.keysym.sym == SDLK_RIGHT) {
+        } else if (ev.key.lkey == LogicalKey::ArrowRight) {
             uint32_t new_spot = state.cur_spot;
             if (++new_spot == num_slots) {
                 new_spot = 0;
@@ -112,7 +111,7 @@ static void editor_input(SDL_Event& ev, void* ctx) {
             state.cur_spot = new_spot;
             // Regenerate scene
             GenerateLevelSceneModel(seg);
-        } else if (ev.key.keysym.sym == SDLK_DOWN) {
+        } else if (ev.key.lkey == LogicalKey::ArrowDown) {
             uint32_t new_sector = state.cur_sector;
             if (new_sector-- != 0) {
                 // Mark the new spot
@@ -122,7 +121,7 @@ static void editor_input(SDL_Event& ev, void* ctx) {
                 // Regenerate scene
                 GenerateLevelSceneModel(seg);
             } // TODO: Move between segments
-        } else if (ev.key.keysym.sym == SDLK_UP) {
+        } else if (ev.key.lkey == LogicalKey::ArrowUp) {
             uint32_t new_sector = state.cur_sector;
             if (++new_sector >= seg.sectors) {
                 // TODO: Move between segments if present
@@ -135,15 +134,15 @@ static void editor_input(SDL_Event& ev, void* ctx) {
             state.cur_sector = new_sector;
             // Regenerate scene
             GenerateLevelSceneModel(seg);
-        } else if (ev.key.keysym.sym == SDLK_SPACE) {
+        } else if (ev.key.lkey == LogicalKey::Space) {
             // Set/reset the spot
             seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 1;
             // Regenerate scene
             GenerateLevelSceneModel(seg);
-        } else if (ev.key.keysym.sym == SDLK_p) {
+        } else if (ev.key.lkey == LogicalKey::P) {
             DumpLevelToFile(state.common->level, "level.dat");
             std::puts("Dumped level to file 'level.dat'");
-        } else if (ev.key.keysym.sym == SDLK_l) {
+        } else if (ev.key.lkey == LogicalKey::L) {
             if (LoadLevelFromFile(level, "level.dat")) {
                 state.cur_segment = 0;
                 state.cur_sector = 0;
@@ -196,7 +195,7 @@ static void game_init(void* common_ctx, void* ctx) {
     s_ctx.speed = 0.0f;
 }
 
-static void game_input(SDL_Event& ev, void* ctx) {}
+static void game_input(WinEvent const& ev, void* ctx) {}
 
 static void game_render(void* ctx) {
     PlayingState& state = *reinterpret_cast<PlayingState*>(ctx);
@@ -257,7 +256,6 @@ static void common_finish(CommonState& state, EditorState& s_editor, PlayingStat
     glDeleteBuffers(1, &s_playing.player_vbo);
 }
 
-#ifdef DISPLAY_SDL
 int main() {
     static GameStateDef state_def_editor {
         &editor_init,
@@ -279,17 +277,20 @@ int main() {
     GameStateDef const* state = &state_def_editor;
     void* state_ctx = &s_editor;
 
-    SDL_Init(SDL_INIT_VIDEO);
+    WindowState* window;
+    {
+        InitParams params = {
+            .gl_major = 3,
+            .gl_minor = 2,
+            .stencil_size = 8,
+            .init_width = 800,
+            .init_height = 800,
+            .title = "Test ogl",
+        };
+        window = init_window(params);
+    }
 
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-
-    SDL_Window* wnd = SDL_CreateWindow("Test ogl", 0, 0, 800, 800, SDL_WINDOW_OPENGL);
-    SDL_GLContext gctx = SDL_GL_CreateContext(wnd);
-
-    SDL_GL_MakeCurrent(wnd, gctx);
+    make_current(window);
     glewExperimental = true;
     glewInit();
 
@@ -300,12 +301,12 @@ int main() {
 
     state->change(state_ctx);
 
-    SDL_Event ev;
+    WinEvent ev;
     while (true) {
-        while (SDL_PollEvent(&ev)) {
-            if (ev.type == SDL_QUIT)
+        while (window_pop_event(window, ev)) {
+            if (ev.type == EventType::Quit)
                 goto end_prog;
-            else if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_b) {
+            else if (ev.type == EventType::KeyDown && ev.key.lkey == LogicalKey::B) {
                 state->change(state_ctx);
                 if (state == &state_def_editor) {
                     state = &state_def_game;
@@ -321,16 +322,11 @@ int main() {
 
         // Render
         state->render(state_ctx);
-        SDL_GL_SwapWindow(wnd);
+        window_swap(window);
     }
     end_prog:
 
     // Deinit
     common_finish(s_common, s_editor, s_game);
-
-    SDL_GL_DeleteContext(gctx);
-    SDL_DestroyWindow(wnd);
-
-    SDL_Quit();
+    window_finish(window);
 }
-#endif

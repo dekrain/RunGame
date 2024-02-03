@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-#include <SDL2/SDL.h>
+#include "event.hpp"
 
 constexpr uint16_t leveldata_version = 2;
 
@@ -69,7 +69,7 @@ struct Vtx {
 
 struct GameStateDef {
     void (*init)(void* common_ctx, void* state_ctx);
-    void (*handle_event)(SDL_Event& ev, void* ctx);
+    void (*handle_event)(WinEvent const& ev, void* ctx);
     void (*render)(void* ctx);
     void (*change)(void* ctx); // Action that happens when a different state is selected
 };
