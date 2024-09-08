@@ -5,6 +5,7 @@
 
 #include <GL/glew.h>
 
+#include "event.hpp"
 #include "util.hpp"
 #include "run.hpp"
 #include "wnd.hpp"
@@ -288,6 +289,9 @@ int main() {
             .title = "Test ogl",
         };
         window = init_window(params);
+        if (!window) {
+            return 1;
+        }
     }
 
     make_current(window);
