@@ -78,7 +78,12 @@ bool window_pop_event(WindowState* window, WinEvent& event) {
             MK(LEFT, ArrowLeft) \
             MK(RIGHT, ArrowRight) \
             MK(UP, ArrowUp) \
-            MK(DOWN, ArrowDown)
+            MK(DOWN, ArrowDown) \
+            MK(PAGEUP, PageUp) \
+            MK(PAGEDOWN, PageDown) \
+            MK(INSERT, Insert) \
+            MK(DELETE, Delete) \
+            // End
         // Map key
         #define MK(sdl, enum) case SDL_SCANCODE_##sdl: event.key.pkey = PhysicalKey::enum; break;
         switch (window->event.key.keysym.scancode) {

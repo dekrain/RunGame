@@ -99,6 +99,10 @@ static struct PhysicalKeyNameMapping {
     K("RGHT", ArrowRight)
     K("UP", ArrowUp)
     K("DOWN", ArrowDown)
+    K("PGUP", PageUp)
+    K("PGDN", PageDown)
+    K("INS", Insert)
+    K("DELE", Delete)
 };
 
 struct PhysicalKeyMap {
@@ -224,6 +228,10 @@ static void get_x_key_codes(WindowState const& window, decltype(WinEvent::key)& 
         SYM(plus, Plus)
         SYM(minus, Minus)
         SYM(equal, Equals)
+        SYM(Prior, PageUp)
+        SYM(Next, PageDown)
+        SYM(Insert, Insert)
+        SYM(Delete, Delete)
         default:
             key.lkey = LogicalKey::Unknown;
             break;

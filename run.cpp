@@ -16,8 +16,7 @@ GeometrySegment::~GeometrySegment() {
 LevelInfo LoadBlankLevel() {
     LevelInfo info;
 
-    GeometrySegment& seg = *new GeometrySegment;
-    info.segments.push_back(std::unique_ptr<GeometrySegment>(&seg));
+    GeometrySegment& seg = *info.segments.emplace_back(new GeometrySegment);
     // 5 planes per 4 floors per sector
     seg.floors = 4;
     seg.floor_planes = 5;

@@ -134,14 +134,13 @@ static void editor_input(WinEvent const& ev, void* ctx) {
                     // Unmark the sector
                     ToggleSectorMark(seg, state.cur_sector, num_slots);
                     state.segment_mode = SegmentMode::Segment;
-                    // Build the segment mesh
+                    GenerateLevelSceneModel(seg);
                     break;
                 case SegmentMode::Segment:
                     // Recycle the segment buffer
                     state.segment_mode = SegmentMode::Tile;
                     // Mark the tile
                     seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
-                    // Regenerate scene
                     GenerateLevelSceneModel(seg);
                     break;
             }
@@ -214,9 +213,11 @@ static void editor_input(WinEvent const& ev, void* ctx) {
             }
             uint32_t new_sector = state.cur_sector;
             if (++new_sector >= seg.sectors) {
+                // Temporarily disable the ability to make new sectors just by navigation
+                break;
                 // TODO: Move between segments if present
-                seg.data.resize(seg.data.size() + num_slots);
-                ++seg.sectors;
+                //seg.data.resize(seg.data.size() + num_slots);
+                //++seg.sectors;
             }
             // Mark the new spot
             if (state.segment_mode == SegmentMode::Tile) {
@@ -257,6 +258,70 @@ static void editor_input(WinEvent const& ev, void* ctx) {
             }
             break;
         }
+        case LogicalKey::PageUp:
+        case LogicalKey::Insert: {
+            bool after = ev.key.lkey == LogicalKey::PageUp;
+            // Insert section/sector
+            switch (state.segment_mode) {
+            case SegmentMode::Tile: break;
+            case SegmentMode::Sector:
+                ToggleSectorMark(seg, state.cur_sector, num_slots);
+                seg.sectors += 1;
+                if (after) {
+                    state.cur_sector += 1;
+                }
+                seg.data.insert(seg.data.begin() + state.cur_sector * num_slots, num_slots, 0);
+                ToggleSectorMark(seg, state.cur_sector, num_slots);
+                GenerateLevelSceneModel(seg);
+                break;
+            case SegmentMode::Segment: {
+                if (after) {
+                    state.cur_segment += 1;
+                }
+                GeometrySegment& newseg = **level.segments.emplace(level.segments.begin() + state.cur_segment, new GeometrySegment);
+                // Copy geometry from current segment
+                newseg.floors = seg.floors;
+                newseg.floor_planes = seg.floor_planes;
+                newseg.sectors = 1;
+                newseg.data.resize(newseg.floors * newseg.floor_planes * newseg.sectors, 0);
+                state.cur_sector = 0;
+                GetFloorProperties(newseg);
+                SetupSegmentBuffers(newseg);
+                GenerateLevelSceneModel(newseg);
+                break;
+            }
+            }
+            break;
+        }
+        case LogicalKey::PageDown:
+        case LogicalKey::Delete: {
+            bool back = ev.key.lkey == LogicalKey::PageDown;
+            // Delete section/sector
+            switch (state.segment_mode) {
+                case SegmentMode::Tile: break;
+                case SegmentMode::Sector:
+                    if (seg.sectors <= 1)
+                        break;
+                    // No need to unmark, since it's getting deleted
+                    seg.data.erase(seg.data.begin() + state.cur_sector * num_slots, seg.data.begin() + (state.cur_sector + 1) * num_slots);
+                    seg.sectors -= 1;
+                    if (state.cur_sector == seg.sectors or (back and state.cur_sector > 0)) {
+                        state.cur_sector -= 1;
+                    }
+                    ToggleSectorMark(seg, state.cur_sector, num_slots);
+                    GenerateLevelSceneModel(seg);
+                    break;
+                case SegmentMode::Segment:
+                    if (level.segments.size() <= 1)
+                        break;
+                    level.segments.erase(level.segments.begin() + state.cur_segment);
+                    if (state.cur_segment == level.segments.size() or (back and state.cur_segment > 0)) {
+                        state.cur_segment -= 1;
+                    }
+                    break;
+            }
+            break;
+        }
         case LogicalKey::Plus: {
             // Increase floor count
             break;
@@ -276,7 +341,7 @@ void RenderLevel(CommonState const& common, float curZ) {
         glUniform3f(common.shader.loc_uDisplacement, 0.f, 0.f, curZ);
         glBindVertexArray(seg->gl_vao);
         glDrawArrays(GL_TRIANGLES, 0, seg->vtx_count);
-        curZ += sLevelZScale * seg->sectors;
+        curZ -= sLevelZScale * seg->sectors;
     }
 }
 
@@ -294,7 +359,7 @@ void RenderLevelWithSegment(CommonState const& common, uint32_t segment, uint32_
             glBindVertexArray(seg.gl_vao);
             glDrawArrays(GL_TRIANGLES, 0, seg.vtx_count);
         }
-        curZ += sLevelZScale * seg.sectors;
+        curZ -= sLevelZScale * seg.sectors;
     }
 }
 

@@ -14,7 +14,7 @@ enum class LogicalKey : uint16_t {
     N1, N2, N3, N4, N5, N6, N7, N8, N9, N0,
     Return, Escape, Backspace, Tab, Space,
     ArrowLeft, ArrowRight, ArrowUp, ArrowDown,
-    Plus, Minus, Equals,
+    Plus, Minus, Equals, PageUp, PageDown, Insert, Delete,
 };
 
 enum class PhysicalKey : uint16_t {
@@ -23,7 +23,7 @@ enum class PhysicalKey : uint16_t {
     N1, N2, N3, N4, N5, N6, N7, N8, N9, N0,
     Return, Escape, Backspace, Tab, Space,
     ArrowLeft, ArrowRight, ArrowUp, ArrowDown,
-    Minus, Equals,
+    Minus, Equals, PageUp, PageDown, Insert, Delete,
 };
 
 #ifdef DEFINE_KEY_TO_STRING
@@ -36,7 +36,7 @@ inline char const* LogicalKeyAsString(LogicalKey key) {
         CASE(N1) CASE(N2) CASE(N3) CASE(N4) CASE(N5) CASE(N6) CASE(N7) CASE(N8) CASE(N9) CASE(N0)
         CASE(Return) CASE(Escape) CASE(Backspace) CASE(Tab) CASE(Space)
         CASE(ArrowLeft) CASE(ArrowRight) CASE(ArrowUp) CASE(ArrowDown)
-        CASE(Plus) CASE(Minus) CASE(Equals)
+        CASE(Plus) CASE(Minus) CASE(Equals) CASE(PageUp) CASE(PageDown) CASE(Insert) CASE(Delete)
     }
     return "<invalid>";
     #undef TYPE
@@ -49,7 +49,7 @@ inline char const* PhysicalKeyAsString(PhysicalKey key) {
         CASE(N1) CASE(N2) CASE(N3) CASE(N4) CASE(N5) CASE(N6) CASE(N7) CASE(N8) CASE(N9) CASE(N0)
         CASE(Return) CASE(Escape) CASE(Backspace) CASE(Tab) CASE(Space)
         CASE(ArrowLeft) CASE(ArrowRight) CASE(ArrowUp) CASE(ArrowDown)
-        CASE(Minus) CASE(Equals)
+        CASE(Minus) CASE(Equals) CASE(PageUp) CASE(PageDown) CASE(Insert) CASE(Delete)
     }
     return "<invalid>";
     #undef TYPE

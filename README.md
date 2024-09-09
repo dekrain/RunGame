@@ -10,6 +10,10 @@ While in editor mode (default):
 -   [`W`] Move forward
 -   [`S`] Move backward
 -   [`Space`] Place/remove tile
+-   [`PageUp`] Append sector/segment after current position
+-   [`PageDown`] Delete sector/segment at current position and move back
+-   [`Insert`] Insert sector/segment before current position
+-   [`Delete`] Delete sector/segment at current position and move forward
 -   [`P`] Save current level to `level.dat`
 -   [`L`] Load current level from `level.dat`
 -   [_Arrow keys_] Select tile
