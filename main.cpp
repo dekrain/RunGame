@@ -56,10 +56,20 @@ struct CommonState {
     BasicShader shader;
 };
 
+enum class SegmentMode : uint8_t {
+    Tile, // Operate on individual tiles
+    Sector, // Operate on a sector/Z-strip (?)
+    Segment, // Operate on the whole segment
+};
+
 struct EditorState {
     CommonState* common;
     uint32_t cur_segment, cur_sector, cur_spot;
     float curZ;
+    SegmentMode segment_mode;
+    uint32_t segment_buffer;
+    uint32_t segment_vao;
+    uint32_t segment_buffer_floors;
 };
 
 struct PlayingState {
@@ -74,23 +84,73 @@ static void editor_init(void* common_ctx, void* ctx) {
 
     s_ctx.common = &s_common;
     s_ctx.cur_segment = s_ctx.cur_sector = s_ctx.cur_spot = 0;
+    s_ctx.segment_mode = SegmentMode::Tile;
+    glGenBuffers(1, &s_ctx.segment_buffer);
+    glGenVertexArrays(1, &s_ctx.segment_vao);
+
+    glBindVertexArray(s_ctx.segment_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, s_ctx.segment_buffer);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(Vtx), reinterpret_cast<const void*>(offsetof(Vtx, pos)));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, false, sizeof(Vtx), reinterpret_cast<const void*>(offsetof(Vtx, col)));
+    glEnableVertexAttribArray(1);
 
     s_ctx.curZ = 0.0f;
+    s_ctx.segment_buffer_floors = 0;
+}
+
+static void ToggleSectorMark(GeometrySegment& seg, uint32_t sector, uint32_t num_slots) {
+    for (uint32_t slot = 0; slot != num_slots; ++slot) {
+        seg.data[sector * num_slots + slot] ^= 2;
+    }
 }
 
 static void editor_input(WinEvent const& ev, void* ctx) {
     EditorState& state = *reinterpret_cast<EditorState*>(ctx);
     LevelInfo& level = state.common->level;
-    GeometrySegment& seg = level.segments[state.cur_segment];
+    GeometrySegment& seg = *level.segments[state.cur_segment];
     uint32_t num_slots = seg.floors * seg.floor_planes;
     if (ev.type == EventType::KeyDown) {
-        if (ev.key.lkey == LogicalKey::W) {
+        switch (ev.key.lkey) {
+        case LogicalKey::W:
             state.curZ += 0.02f;
-        } else if (ev.key.lkey == LogicalKey::S) {
+            break;
+        case LogicalKey::S:
             state.curZ -= 0.02f;
+            break;
+        // mode change
+        case LogicalKey::M: {
+            switch (state.segment_mode) {
+                case SegmentMode::Tile:
+                    // Unmark the tile
+                    seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
+                    state.segment_mode = SegmentMode::Sector;
+                    // Mark the sector
+                    ToggleSectorMark(seg, state.cur_sector, num_slots);
+                    // Regenerate scene
+                    GenerateLevelSceneModel(seg);
+                    break;
+                case SegmentMode::Sector:
+                    // Unmark the sector
+                    ToggleSectorMark(seg, state.cur_sector, num_slots);
+                    state.segment_mode = SegmentMode::Segment;
+                    // Build the segment mesh
+                    break;
+                case SegmentMode::Segment:
+                    // Recycle the segment buffer
+                    state.segment_mode = SegmentMode::Tile;
+                    // Mark the tile
+                    seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
+                    // Regenerate scene
+                    GenerateLevelSceneModel(seg);
+                    break;
+            }
+            break;
         }
         // select
-        else if (ev.key.lkey == LogicalKey::ArrowLeft) {
+        case LogicalKey::ArrowLeft: {
+            if (state.segment_mode != SegmentMode::Tile)
+                break;
             uint32_t new_spot = state.cur_spot;
             if (new_spot-- == 0) {
                 new_spot = num_slots - 1;
@@ -101,7 +161,11 @@ static void editor_input(WinEvent const& ev, void* ctx) {
             state.cur_spot = new_spot;
             // Regenerate segment
             GenerateLevelSceneModel(seg);
-        } else if (ev.key.lkey == LogicalKey::ArrowRight) {
+            break;
+        }
+        case LogicalKey::ArrowRight: {
+            if (state.segment_mode != SegmentMode::Tile)
+                break;
             uint32_t new_spot = state.cur_spot;
             if (++new_spot == num_slots) {
                 new_spot = 0;
@@ -112,17 +176,42 @@ static void editor_input(WinEvent const& ev, void* ctx) {
             state.cur_spot = new_spot;
             // Regenerate scene
             GenerateLevelSceneModel(seg);
-        } else if (ev.key.lkey == LogicalKey::ArrowDown) {
+            break;
+        }
+        case LogicalKey::ArrowDown: {
+            if (state.segment_mode == SegmentMode::Segment) {
+                if (state.cur_segment != 0) {
+                    --state.cur_segment;
+                    state.cur_spot = 0;
+                    state.cur_sector = 0;
+                }
+                break;
+            }
             uint32_t new_sector = state.cur_sector;
             if (new_sector-- != 0) {
                 // Mark the new spot
-                seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
-                seg.data[new_sector * num_slots + state.cur_spot] ^= 2;
+                if (state.segment_mode == SegmentMode::Tile) {
+                    seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
+                    seg.data[new_sector * num_slots + state.cur_spot] ^= 2;
+                } else {
+                    ToggleSectorMark(seg, state.cur_sector, num_slots);
+                    ToggleSectorMark(seg, new_sector, num_slots);
+                }
                 state.cur_sector = new_sector;
                 // Regenerate scene
                 GenerateLevelSceneModel(seg);
             } // TODO: Move between segments
-        } else if (ev.key.lkey == LogicalKey::ArrowUp) {
+            break;
+        }
+        case LogicalKey::ArrowUp: {
+            if (state.segment_mode == SegmentMode::Segment) {
+                if (state.cur_segment + 1 < level.segments.size()) {
+                    ++state.cur_segment;
+                    state.cur_spot = 0;
+                    state.cur_sector = 0;
+                }
+                break;
+            }
             uint32_t new_sector = state.cur_sector;
             if (++new_sector >= seg.sectors) {
                 // TODO: Move between segments if present
@@ -130,29 +219,82 @@ static void editor_input(WinEvent const& ev, void* ctx) {
                 ++seg.sectors;
             }
             // Mark the new spot
-            seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
-            seg.data[new_sector * num_slots + state.cur_spot] ^= 2;
+            if (state.segment_mode == SegmentMode::Tile) {
+                seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
+                seg.data[new_sector * num_slots + state.cur_spot] ^= 2;
+            } else {
+                ToggleSectorMark(seg, state.cur_sector, num_slots);
+                ToggleSectorMark(seg, new_sector, num_slots);
+            }
             state.cur_sector = new_sector;
             // Regenerate scene
             GenerateLevelSceneModel(seg);
-        } else if (ev.key.lkey == LogicalKey::Space) {
+            break;
+        }
+        case LogicalKey::Space: {
+            if (state.segment_mode != SegmentMode::Tile)
+                break;
             // Set/reset the spot
             seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 1;
             // Regenerate scene
             GenerateLevelSceneModel(seg);
-        } else if (ev.key.lkey == LogicalKey::P) {
+            break;
+        }
+        case LogicalKey::P: {
             DumpLevelToFile(state.common->level, "level.dat");
             std::puts("Dumped level to file 'level.dat'");
-        } else if (ev.key.lkey == LogicalKey::L) {
+            break;
+        }
+        case LogicalKey::L: {
             if (LoadLevelFromFile(level, "level.dat")) {
                 state.cur_segment = 0;
                 state.cur_sector = 0;
                 state.cur_spot = 0;
-                level.segments[0].data[0] ^= 2;
-                GenerateLevelSceneModel(level.segments[0]);
+                state.segment_mode = SegmentMode::Tile;
+                level.segments[0]->data[0] ^= 2;
+                GenerateLevelSceneModel(*level.segments[0]);
                 std::puts("Loaded level 'level.dat'");
             }
+            break;
         }
+        case LogicalKey::Plus: {
+            // Increase floor count
+            break;
+        }
+        case LogicalKey::Minus: {
+            // Decrease floor count
+            break;
+        }
+        default: break;
+        }
+    }
+}
+
+void RenderLevel(CommonState const& common, float curZ) {
+    glUniform3f(common.shader.loc_uScale, 1.f, 1.f, sLevelZScale);
+    for (auto& seg : common.level.segments) {
+        glUniform3f(common.shader.loc_uDisplacement, 0.f, 0.f, curZ);
+        glBindVertexArray(seg->gl_vao);
+        glDrawArrays(GL_TRIANGLES, 0, seg->vtx_count);
+        curZ += sLevelZScale * seg->sectors;
+    }
+}
+
+void RenderLevelWithSegment(CommonState const& common, uint32_t segment, uint32_t gl_vao, float curZ) {
+    glUniform3f(common.shader.loc_uScale, 1.f, 1.f, sLevelZScale);
+    for (uint32_t idx = 0; idx != common.level.segments.size(); ++idx) {
+        auto const &seg = *common.level.segments[idx];
+        glUniform3f(common.shader.loc_uDisplacement, 0.f, 0.f, curZ);
+        if (idx == segment) {
+            glBindVertexArray(gl_vao);
+            glUniform3f(common.shader.loc_uScale, 1.f, 1.f, sLevelZScale * seg.sectors);
+            glDrawArrays(GL_TRIANGLES, 0, 6 * seg.floors);
+            glUniform3f(common.shader.loc_uScale, 1.f, 1.f, sLevelZScale);
+        } else {
+            glBindVertexArray(seg.gl_vao);
+            glDrawArrays(GL_TRIANGLES, 0, seg.vtx_count);
+        }
+        curZ += sLevelZScale * seg.sectors;
     }
 }
 
@@ -162,15 +304,33 @@ static void editor_render(void* ctx) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glUseProgram(state.common->shader.prog);
-    glUniform3f(state.common->shader.loc_uScale, 1.f, 1.f, sLevelZScale);
-    glUniform3f(state.common->shader.loc_uDisplacement, 0.f, 0.f, state.curZ);
-    RenderLevel(state.common->level);
+    if (state.segment_mode == SegmentMode::Segment) {
+        GeometrySegment const& seg = *state.common->level.segments[state.cur_segment];
+        if (state.segment_buffer_floors != seg.floors) {
+            glBindBuffer(GL_ARRAY_BUFFER, state.segment_buffer);
+            GenerateSegmentSelectionModel(seg);
+            state.segment_buffer_floors = seg.floors;
+        }
+        RenderLevelWithSegment(*state.common, state.cur_segment, state.segment_vao, state.curZ);
+    } else {
+        RenderLevel(*state.common, state.curZ);
+    }
 }
 
 static void editor_switch(void* ctx) {
     EditorState& state = *reinterpret_cast<EditorState*>(ctx);
-    GeometrySegment& seg = state.common->level.segments[state.cur_segment];
-    seg.data[state.cur_sector * seg.floors * seg.floor_planes + state.cur_spot] ^= 2;
+    GeometrySegment& seg = *state.common->level.segments[state.cur_segment];
+    switch (state.segment_mode) {
+        case SegmentMode::Tile:
+            seg.data[state.cur_sector * seg.floors * seg.floor_planes + state.cur_spot] ^= 2;
+            break;
+        case SegmentMode::Sector:
+            ToggleSectorMark(seg, state.cur_sector, seg.floors * seg.floor_planes);
+            break;
+        case SegmentMode::Segment:
+            // Already clean
+            break;
+    }
     GenerateLevelSceneModel(seg);
 }
 
@@ -208,13 +368,11 @@ static void game_render(void* ctx) {
     state.curZ += state.speed;
 
     glUseProgram(state.common->shader.prog);
-    glUniform3f(state.common->shader.loc_uScale, 1.f, 1.f, sLevelZScale);
-    glUniform3f(state.common->shader.loc_uDisplacement, 0.f, 0.f, state.curZ + zfactor);
-    RenderLevel(state.common->level);
+    RenderLevel(*state.common, state.curZ + zfactor);
 
     glBindVertexArray(state.player_vao);
-    glUniform3f(state.common->shader.loc_uScale, state.common->level.segments[0].pwidth, .4f, sLevelZScale);
-    glUniform3f(state.common->shader.loc_uDisplacement, 0., state.common->level.segments[0].yval, zfactor);
+    glUniform3f(state.common->shader.loc_uScale, state.common->level.segments[0]->pwidth, .4f, sLevelZScale);
+    glUniform3f(state.common->shader.loc_uDisplacement, 0., state.common->level.segments[0]->yval, zfactor);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
@@ -227,10 +385,10 @@ static void game_switch(void* ctx) {
 static void common_init(CommonState& state) {
     // Init scene
     state.level = LoadBlankLevel();
-    SetupSegmentBuffers(state.level.segments[0]);
+    SetupSegmentBuffers(*state.level.segments[0]);
 
     // Load level geometry
-    GenerateLevelSceneModel(state.level.segments[0]);
+    GenerateLevelSceneModel(*state.level.segments[0]);
 
     // Load shaders
     uint32_t vs = LoadShaderFromFile("basic.vs.glsl", GL_VERTEX_SHADER);

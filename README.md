@@ -4,15 +4,16 @@ To compile using `compile.sh` script you must provide a `GLEW_PATH` environment 
 
 ## Controls
 General:
--   [B] Change between modes
+-   [`B`] Change between modes
 
 While in editor mode (default):
--   [W] Move forward
--   [S] Move backward
--   [Space] Place/remove tile
--   [P] Save current level to `level.dat`
--   [L] Load current level from `level.dat`
--   [Arrow keys] Select tile
+-   [`W`] Move forward
+-   [`S`] Move backward
+-   [`Space`] Place/remove tile
+-   [`P`] Save current level to `level.dat`
+-   [`L`] Load current level from `level.dat`
+-   [_Arrow keys_] Select tile
+-   [`m`] Toggle selection mode
 
 While in playing mode:
 -   Currently nothing (change state to reset game)

@@ -14,7 +14,7 @@ constexpr uint16_t leveldata_version = 2;
 
 // Each segment can have different floor/plane configuration
 struct GeometrySegment {
-    uint32_t floors; // Number of standable floors
+    uint32_t floors; // Number of standable floors; may be 0 for empty space (gap segment)
     uint32_t floor_planes; // Number of divisions (tiles) per floor
     uint32_t sectors; // Number of level sectors (tiles along Z axis)
 
@@ -26,13 +26,19 @@ struct GeometrySegment {
 
     // Segment data
     std::vector<uint8_t> data;
-    uint32_t gl_vao;
-    uint32_t gl_vbo;
+    uint32_t gl_vao = 0;
+    uint32_t gl_vbo = 0;
     size_t vtx_count;
+
+    GeometrySegment() = default;
+    ~GeometrySegment();
+
+    GeometrySegment(GeometrySegment&&) = delete;
+    GeometrySegment(GeometrySegment const&) = delete;
 };
 
 struct LevelInfo {
-    std::vector<GeometrySegment> segments;
+    std::vector<std::unique_ptr<GeometrySegment>> segments;
 };
 
 LevelInfo LoadBlankLevel(); // Default level on editor startup
@@ -49,10 +55,13 @@ void GenerateCharacterModel(uint32_t vbo);
 void SetupSegmentBuffers(GeometrySegment& seg);
 void SetupLevelMeshArray(uint32_t vbo);
 
+void GenerateSegmentSelectionModel(GeometrySegment const& seg);
+
 // Gets geometric properties of the main floor (on the bottom)
 void GetFloorProperties(GeometrySegment& seg);
 
-void RenderLevel(LevelInfo const& level);
+//void RenderLevel(LevelInfo const& level);
+//void RenderLevelWithSegment(LevelInfo const& level, uint32_t segment, uint32_t gl_vao);
 
 void DumpLevelToFile(LevelInfo const& level, char const* fname);
 // Returns true on success

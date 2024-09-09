@@ -8,9 +8,16 @@
 
 inline double const C_PI = std::acos(-1);
 
+GeometrySegment::~GeometrySegment() {
+    glDeleteVertexArrays(1, &gl_vao);
+    glDeleteBuffers(1, &gl_vbo);
+}
+
 LevelInfo LoadBlankLevel() {
     LevelInfo info;
-    GeometrySegment& seg = info.segments.emplace_back();
+
+    GeometrySegment& seg = *new GeometrySegment;
+    info.segments.push_back(std::unique_ptr<GeometrySegment>(&seg));
     // 5 planes per 4 floors per sector
     seg.floors = 4;
     seg.floor_planes = 5;
@@ -21,12 +28,6 @@ LevelInfo LoadBlankLevel() {
 }
 
 void CleanupLevel(LevelInfo& level) {
-    for (GeometrySegment& seg : level.segments) {
-        seg.data.clear();
-        seg.data.shrink_to_fit();
-        glDeleteVertexArrays(1, &seg.gl_vao);
-        glDeleteBuffers(1, &seg.gl_vbo);
-    }
     level.segments.clear();
     level.segments.shrink_to_fit();
 }
@@ -119,6 +120,68 @@ void GenerateLevelSceneModel(GeometrySegment& seg) {
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * seg.vtx_count * 2 * 3, meshbuf.get(), GL_DYNAMIC_DRAW);
 }
 
+void GenerateSegmentSelectionModel(GeometrySegment const& seg) {
+    size_t const vtx_count = 6 * seg.floors;
+    auto meshbuf = std::unique_ptr<float[]>(new float[vtx_count * 2 * 3]);
+    float* meshptr = meshbuf.get();
+
+    double const phi = 2*C_PI / seg.floors;
+    for (uint32_t floor = 0; floor != seg.floors; ++floor) {
+        double const angle = floor*phi;
+        float xl, yl, xr, yr; // XY pos of left/right corners
+        xl =  std::sin(angle - phi/2);
+        yl = -std::cos(angle - phi/2);
+        xr =  std::sin(angle + phi/2);
+        yr = -std::cos(angle + phi/2);
+
+        // Triangle 1
+        *meshptr++ = xl;
+        *meshptr++ = yl;
+        *meshptr++ = 0.f;
+        *meshptr++ = 0.f;
+        *meshptr++ = 1.f;
+        *meshptr++ = 0.f;
+
+        *meshptr++ = xr;
+        *meshptr++ = yr;
+        *meshptr++ = 0.f;
+        *meshptr++ = 0.f;
+        *meshptr++ = 1.f;
+        *meshptr++ = 0.f;
+
+        *meshptr++ = xr;
+        *meshptr++ = yr;
+        *meshptr++ = -1.f;
+        *meshptr++ = 0.f;
+        *meshptr++ = 1.f;
+        *meshptr++ = 0.f;
+
+        // Triangle 1
+        *meshptr++ = xr;
+        *meshptr++ = yr;
+        *meshptr++ = -1.f;
+        *meshptr++ = 0.f;
+        *meshptr++ = 1.f;
+        *meshptr++ = 0.f;
+
+        *meshptr++ = xl;
+        *meshptr++ = yl;
+        *meshptr++ = -1.f;
+        *meshptr++ = 0.f;
+        *meshptr++ = 1.f;
+        *meshptr++ = 0.f;
+
+        *meshptr++ = xl;
+        *meshptr++ = yl;
+        *meshptr++ = 0.f;
+        *meshptr++ = 0.f;
+        *meshptr++ = 1.f;
+        *meshptr++ = 0.f;
+    }
+
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vtx_count * 2 * 3, meshbuf.get(), GL_DYNAMIC_DRAW);
+}
+
 void GetFloorProperties(GeometrySegment& seg) {
     double const phi = C_PI / seg.floors;
     seg.yval = -std::cos(phi);
@@ -127,19 +190,13 @@ void GetFloorProperties(GeometrySegment& seg) {
     seg.pwidth = 2*seg.xmax / seg.floor_planes;
 }
 
-void RenderLevel(LevelInfo const& level) {
-    for (GeometrySegment const& seg : level.segments) {
-        glBindVertexArray(seg.gl_vao);
-        glDrawArrays(GL_TRIANGLES, 0, seg.vtx_count);
-    }
-}
-
 void GenerateCharacterModel(uint32_t vbo) {
+    constexpr Col cPlayerColor = {1.f, .2f, 0.f};
     static Vtx sModel[] = {
-        {{-.5f, 0.f, 0.f}, {1.f, .2f, 0.f}},
-        {{ .5f, 0.f, 0.f}, {1.f, .2f, 0.f}},
-        {{-.5f, 1.f, 0.f}, {1.f, .2f, 0.f}},
-        {{ .5f, 1.f, 0.f}, {1.f, .2f, 0.f}},
+        {{-.5f, 0.f, 0.f}, cPlayerColor},
+        {{ .5f, 0.f, 0.f}, cPlayerColor},
+        {{-.5f, 1.f, 0.f}, cPlayerColor},
+        {{ .5f, 1.f, 0.f}, cPlayerColor},
     };
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(sModel), sModel, GL_STATIC_DRAW);
@@ -164,7 +221,8 @@ void DumpLevelToFile(LevelInfo const& level, char const* fname) {
     std::FILE* file = std::fopen(fname, "wb");
     uint32_t const lv_hdr = (leveldata_version << 0x10) | (level.segments.size() & 0xFFFF);
     std::fwrite(&lv_hdr, sizeof(uint32_t), 1, file);
-    for (GeometrySegment const& seg : level.segments) {
+    for (auto& seg_ : level.segments) {
+        GeometrySegment const& seg = *seg_;
         uint32_t const seg_hdr =
             (seg.sectors & 0xFFFF) | ((seg.floor_planes & 0xFF) << 0x10) | ((seg.floors & 0xFF) << 0x18);
         std::fwrite(&seg_hdr, sizeof(uint32_t), 1, file);
@@ -192,11 +250,12 @@ bool LoadLevelFromFile(LevelInfo& level, char const* fname) {
             static_cast<uint16_t>(lv_hdr >> 0x10), leveldata_version);
     }
     CleanupLevel(level);
-    level.segments.resize(lv_hdr & 0xFFFF);
-    for (size_t i = 0; i < level.segments.size(); ++i) {
+    size_t nr_segments = lv_hdr & 0xFFFF;
+    level.segments.reserve(nr_segments);
+    while (nr_segments --) {
         uint32_t seg_hdr;
         std::fread(&seg_hdr, sizeof(uint32_t), 1, file);
-        GeometrySegment& seg = level.segments[i];
+        auto& seg = *level.segments.emplace_back(new GeometrySegment);
         seg.floors = (seg_hdr >> 0x18) & 0xFF;
         seg.floor_planes = (seg_hdr >> 0x10) & 0xFF;
         seg.sectors = seg_hdr & 0xFFFF;
