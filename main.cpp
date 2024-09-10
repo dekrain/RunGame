@@ -62,14 +62,23 @@ enum class SegmentMode : uint8_t {
     Segment, // Operate on the whole segment
 };
 
+enum class SegmentBufferMode : uint8_t {
+    Solid,
+    Outline,
+    SectorWire,
+    SlotWire,
+};
+
 struct EditorState {
     CommonState* common;
     uint32_t cur_segment, cur_sector, cur_spot;
     float curZ;
     SegmentMode segment_mode;
-    uint32_t segment_buffer;
-    uint32_t segment_vao;
-    uint32_t segment_buffer_floors;
+    SegmentBufferMode segment_block_mode;
+    MeshVisualMode segment_visual_mode;
+    uint32_t segment_block_buffer;
+    uint32_t segment_block_vao;
+    uint32_t segment_block_floors;
 };
 
 struct PlayingState {
@@ -85,18 +94,20 @@ static void editor_init(void* common_ctx, void* ctx) {
     s_ctx.common = &s_common;
     s_ctx.cur_segment = s_ctx.cur_sector = s_ctx.cur_spot = 0;
     s_ctx.segment_mode = SegmentMode::Tile;
-    glGenBuffers(1, &s_ctx.segment_buffer);
-    glGenVertexArrays(1, &s_ctx.segment_vao);
+    glGenBuffers(1, &s_ctx.segment_block_buffer);
+    glGenVertexArrays(1, &s_ctx.segment_block_vao);
 
-    glBindVertexArray(s_ctx.segment_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, s_ctx.segment_buffer);
+    glBindVertexArray(s_ctx.segment_block_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, s_ctx.segment_block_buffer);
     glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(Vtx), reinterpret_cast<const void*>(offsetof(Vtx, pos)));
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 3, GL_FLOAT, false, sizeof(Vtx), reinterpret_cast<const void*>(offsetof(Vtx, col)));
     glEnableVertexAttribArray(1);
 
     s_ctx.curZ = 0.0f;
-    s_ctx.segment_buffer_floors = 0;
+    s_ctx.segment_block_floors = 0;
+    s_ctx.segment_block_mode = SegmentBufferMode::Solid;
+    s_ctx.segment_visual_mode = MeshVisualMode::Outline;
 }
 
 static void ToggleSectorMark(GeometrySegment& seg, uint32_t sector, uint32_t num_slots) {
@@ -371,14 +382,46 @@ static void editor_render(void* ctx) {
     glUseProgram(state.common->shader.prog);
     if (state.segment_mode == SegmentMode::Segment) {
         GeometrySegment const& seg = *state.common->level.segments[state.cur_segment];
-        if (state.segment_buffer_floors != seg.floors) {
-            glBindBuffer(GL_ARRAY_BUFFER, state.segment_buffer);
+        if (state.segment_block_floors != seg.floors or state.segment_block_mode != SegmentBufferMode::Solid) {
+            glBindBuffer(GL_ARRAY_BUFFER, state.segment_block_buffer);
             GenerateSegmentSelectionModel(seg);
-            state.segment_buffer_floors = seg.floors;
+            state.segment_block_floors = seg.floors;
+            state.segment_block_mode = SegmentBufferMode::Solid;
         }
-        RenderLevelWithSegment(*state.common, state.cur_segment, state.segment_vao, state.curZ);
+        RenderLevelWithSegment(*state.common, state.cur_segment, state.segment_block_vao, state.curZ);
     } else {
         RenderLevel(*state.common, state.curZ);
+        if (state.segment_visual_mode != MeshVisualMode::None) {
+            auto const& level = state.common->level;
+            glBindBuffer(GL_ARRAY_BUFFER, state.segment_block_buffer);
+            GeometrySegment const& seg = *level.segments[state.cur_segment];
+            bool regen = state.segment_block_floors != seg.floors;
+            switch (state.segment_visual_mode) {
+            case MeshVisualMode::None: break;
+            case MeshVisualMode::Outline:
+                regen |= state.segment_block_mode != SegmentBufferMode::Outline;
+                if (regen) {
+                    GenerateSegmentOutlineModel(seg);
+                    state.segment_block_mode = SegmentBufferMode::Outline;
+                    state.segment_block_floors = seg.floors;
+                }
+                break;
+            case MeshVisualMode::SectorWire: break;
+            case MeshVisualMode::SlotWire: break;
+            }
+
+            float curZ = state.curZ;
+            for (auto it = level.segments.begin(), end = it + state.cur_segment; it != end; ++it) {
+                curZ -= sLevelZScale * (**it).sectors;
+            }
+
+            auto const& shader = state.common->shader;
+            glBindVertexArray(state.segment_block_vao);
+            glUniform3f(shader.loc_uDisplacement, 0.f, 0.f, curZ);
+            glUniform3f(shader.loc_uScale, 1.f, 1.f, sLevelZScale * seg.sectors);
+            //glUniform3f(shader.loc_uScale, 1.f, 1.f, sLevelZScale);
+            glDrawArrays(GL_LINES, 0, 6 * seg.floors);
+        }
     }
 }
 

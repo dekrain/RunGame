@@ -31,7 +31,7 @@ void CleanupLevel(LevelInfo& level) {
     level.segments.shrink_to_fit();
 }
 
-static Col sColorMap[] = {
+static Col const sColorMap[] = {
     {0., 0., 0.}, // empty (skipped)
     {1., 1., 1.}, // present (normal)
     {.2, .2, .2}, // selected (empty)
@@ -180,6 +180,70 @@ void GenerateSegmentSelectionModel(GeometrySegment const& seg) {
 
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vtx_count * 2 * 3, meshbuf.get(), GL_DYNAMIC_DRAW);
 }
+
+static constexpr Col cMeshOutlineColor = {0.8, 0.4, 0.2};
+
+#define SET_COLOR \
+    *meshptr++ = cMeshOutlineColor[0]; \
+    *meshptr++ = cMeshOutlineColor[1]; \
+    *meshptr++ = cMeshOutlineColor[2];
+
+void GenerateSegmentOutlineModel(GeometrySegment const& seg) {
+    size_t const vtx_count = 6 * seg.floors;
+
+    auto meshbuf = std::unique_ptr<float[]>(new float[vtx_count * 2 * 3]);
+    float* meshptr = meshbuf.get();
+
+    double const phi = 2*C_PI / seg.floors;
+    for (uint32_t floor = 0; floor != seg.floors; ++floor) {
+        double const angle = floor*phi;
+        float xl, yl, xr, yr; // XY pos of left/right corners
+        xl =  std::sin(angle - phi/2);
+        yl = -std::cos(angle - phi/2);
+        xr =  std::sin(angle + phi/2);
+        yr = -std::cos(angle + phi/2);
+
+        // Front line
+        *meshptr++ = xl;
+        *meshptr++ = yl;
+        *meshptr++ = 0.f;
+        SET_COLOR
+
+        *meshptr++ = xr;
+        *meshptr++ = yr;
+        *meshptr++ = 0.f;
+        SET_COLOR
+
+        // Back line
+        *meshptr++ = xl;
+        *meshptr++ = yl;
+        *meshptr++ = -1.f;
+        SET_COLOR
+
+        *meshptr++ = xr;
+        *meshptr++ = yr;
+        *meshptr++ = -1.f;
+        SET_COLOR
+
+        // Side line
+        *meshptr++ = xl;
+        *meshptr++ = yl;
+        *meshptr++ = 0.f;
+        SET_COLOR
+
+        *meshptr++ = xl;
+        *meshptr++ = yl;
+        *meshptr++ = -1.f;
+        SET_COLOR
+    }
+
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vtx_count * 2 * 3, meshbuf.get(), GL_DYNAMIC_DRAW);
+}
+
+void GenerateSegmentSectorWireModel(GeometrySegment const& seg);
+void GenerateSegmentSlotWireModel(GeometrySegment const& seg);
+
+#undef SET_COLOR
 
 void GetFloorProperties(GeometrySegment& seg) {
     double const phi = C_PI / seg.floors;

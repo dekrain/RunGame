@@ -55,7 +55,17 @@ void GenerateCharacterModel(uint32_t vbo);
 void SetupSegmentBuffers(GeometrySegment& seg);
 void SetupLevelMeshArray(uint32_t vbo);
 
+enum class MeshVisualMode : uint8_t {
+    None,
+    Outline,
+    SectorWire,
+    SlotWire,
+};
+
 void GenerateSegmentSelectionModel(GeometrySegment const& seg);
+void GenerateSegmentOutlineModel(GeometrySegment const& seg);
+void GenerateSegmentSectorWireModel(GeometrySegment const& seg);
+void GenerateSegmentSlotWireModel(GeometrySegment const& seg);
 
 // Gets geometric properties of the main floor (on the bottom)
 void GetFloorProperties(GeometrySegment& seg);
