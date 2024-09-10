@@ -120,7 +120,7 @@ static void editor_input(WinEvent const& ev, void* ctx) {
     EditorState& state = *reinterpret_cast<EditorState*>(ctx);
     LevelInfo& level = state.common->level;
     GeometrySegment& seg = *level.segments[state.cur_segment];
-    uint32_t num_slots = seg.floors * seg.floor_planes;
+    uint32_t num_slots = seg.geo.floors * seg.geo.floor_planes;
     if (ev.type == EventType::KeyDown) {
         switch (ev.key.lkey) {
         case LogicalKey::W:
@@ -223,12 +223,12 @@ static void editor_input(WinEvent const& ev, void* ctx) {
                 break;
             }
             uint32_t new_sector = state.cur_sector;
-            if (++new_sector >= seg.sectors) {
+            if (++new_sector >= seg.geo.sectors) {
                 // Temporarily disable the ability to make new sectors just by navigation
                 break;
                 // TODO: Move between segments if present
                 //seg.data.resize(seg.data.size() + num_slots);
-                //++seg.sectors;
+                //++seg.geo.sectors;
             }
             // Mark the new spot
             if (state.segment_mode == SegmentMode::Tile) {
@@ -277,7 +277,7 @@ static void editor_input(WinEvent const& ev, void* ctx) {
             case SegmentMode::Tile: break;
             case SegmentMode::Sector:
                 ToggleSectorMark(seg, state.cur_sector, num_slots);
-                seg.sectors += 1;
+                seg.geo.sectors += 1;
                 if (after) {
                     state.cur_sector += 1;
                 }
@@ -291,10 +291,10 @@ static void editor_input(WinEvent const& ev, void* ctx) {
                 }
                 GeometrySegment& newseg = **level.segments.emplace(level.segments.begin() + state.cur_segment, new GeometrySegment);
                 // Copy geometry from current segment
-                newseg.floors = seg.floors;
-                newseg.floor_planes = seg.floor_planes;
-                newseg.sectors = 1;
-                newseg.data.resize(newseg.floors * newseg.floor_planes * newseg.sectors, 0);
+                newseg.geo.floors = seg.geo.floors;
+                newseg.geo.floor_planes = seg.geo.floor_planes;
+                newseg.geo.sectors = 1;
+                newseg.data.resize(newseg.geo.floors * newseg.geo.floor_planes * newseg.geo.sectors, 0);
                 state.cur_sector = 0;
                 GetFloorProperties(newseg);
                 SetupSegmentBuffers(newseg);
@@ -311,12 +311,12 @@ static void editor_input(WinEvent const& ev, void* ctx) {
             switch (state.segment_mode) {
                 case SegmentMode::Tile: break;
                 case SegmentMode::Sector:
-                    if (seg.sectors <= 1)
+                    if (seg.geo.sectors <= 1)
                         break;
                     // No need to unmark, since it's getting deleted
                     seg.data.erase(seg.data.begin() + state.cur_sector * num_slots, seg.data.begin() + (state.cur_sector + 1) * num_slots);
-                    seg.sectors -= 1;
-                    if (state.cur_sector == seg.sectors or (back and state.cur_sector > 0)) {
+                    seg.geo.sectors -= 1;
+                    if (state.cur_sector == seg.geo.sectors or (back and state.cur_sector > 0)) {
                         state.cur_sector -= 1;
                     }
                     ToggleSectorMark(seg, state.cur_sector, num_slots);
@@ -352,7 +352,7 @@ void RenderLevel(CommonState const& common, float curZ) {
         glUniform3f(common.shader.loc_uDisplacement, 0.f, 0.f, curZ);
         glBindVertexArray(seg->gl_vao);
         glDrawArrays(GL_TRIANGLES, 0, seg->vtx_count);
-        curZ -= sLevelZScale * seg->sectors;
+        curZ -= sLevelZScale * seg->geo.sectors;
     }
 }
 
@@ -363,14 +363,14 @@ void RenderLevelWithSegment(CommonState const& common, uint32_t segment, uint32_
         glUniform3f(common.shader.loc_uDisplacement, 0.f, 0.f, curZ);
         if (idx == segment) {
             glBindVertexArray(gl_vao);
-            glUniform3f(common.shader.loc_uScale, 1.f, 1.f, sLevelZScale * seg.sectors);
-            glDrawArrays(GL_TRIANGLES, 0, 6 * seg.floors);
+            glUniform3f(common.shader.loc_uScale, 1.f, 1.f, sLevelZScale * seg.geo.sectors);
+            glDrawArrays(GL_TRIANGLES, 0, 6 * seg.geo.floors);
             glUniform3f(common.shader.loc_uScale, 1.f, 1.f, sLevelZScale);
         } else {
             glBindVertexArray(seg.gl_vao);
             glDrawArrays(GL_TRIANGLES, 0, seg.vtx_count);
         }
-        curZ -= sLevelZScale * seg.sectors;
+        curZ -= sLevelZScale * seg.geo.sectors;
     }
 }
 
@@ -381,7 +381,7 @@ static void editor_render(void* ctx) {
 
     glUseProgram(state.common->shader.prog);
     if (state.segment_mode == SegmentMode::Segment) {
-        GeometrySegment const& seg = *state.common->level.segments[state.cur_segment];
+        SegmentGeometry const& seg = state.common->level.segments[state.cur_segment]->geo;
         if (state.segment_block_floors != seg.floors or state.segment_block_mode != SegmentBufferMode::Solid) {
             glBindBuffer(GL_ARRAY_BUFFER, state.segment_block_buffer);
             GenerateSegmentSelectionModel(seg);
@@ -394,7 +394,7 @@ static void editor_render(void* ctx) {
         if (state.segment_visual_mode != MeshVisualMode::None) {
             auto const& level = state.common->level;
             glBindBuffer(GL_ARRAY_BUFFER, state.segment_block_buffer);
-            GeometrySegment const& seg = *level.segments[state.cur_segment];
+            SegmentGeometry const& seg = level.segments[state.cur_segment]->geo;
             bool regen = state.segment_block_floors != seg.floors;
             switch (state.segment_visual_mode) {
             case MeshVisualMode::None: break;
@@ -412,7 +412,7 @@ static void editor_render(void* ctx) {
 
             float curZ = state.curZ;
             for (auto it = level.segments.begin(), end = it + state.cur_segment; it != end; ++it) {
-                curZ -= sLevelZScale * (**it).sectors;
+                curZ -= sLevelZScale * (**it).geo.sectors;
             }
 
             auto const& shader = state.common->shader;
@@ -430,10 +430,10 @@ static void editor_switch(void* ctx) {
     GeometrySegment& seg = *state.common->level.segments[state.cur_segment];
     switch (state.segment_mode) {
         case SegmentMode::Tile:
-            seg.data[state.cur_sector * seg.floors * seg.floor_planes + state.cur_spot] ^= 2;
+            seg.data[state.cur_sector * seg.geo.floors * seg.geo.floor_planes + state.cur_spot] ^= 2;
             break;
         case SegmentMode::Sector:
-            ToggleSectorMark(seg, state.cur_sector, seg.floors * seg.floor_planes);
+            ToggleSectorMark(seg, state.cur_sector, seg.geo.floors * seg.geo.floor_planes);
             break;
         case SegmentMode::Segment:
             // Already clean

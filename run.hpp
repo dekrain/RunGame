@@ -9,14 +9,18 @@
 
 constexpr uint16_t leveldata_version = 2;
 
-// 1 means floor plane present
-// 0 means empty space
-
-// Each segment can have different floor/plane configuration
-struct GeometrySegment {
+struct SegmentGeometry {
     uint32_t floors; // Number of standable floors; may be 0 for empty space (gap segment)
     uint32_t floor_planes; // Number of divisions (tiles) per floor
     uint32_t sectors; // Number of level sectors (tiles along Z axis)
+
+    friend constexpr bool operator==(SegmentGeometry const& a, SegmentGeometry const& b) = default;
+    friend constexpr bool operator!=(SegmentGeometry const& a, SegmentGeometry const& b) = default;
+};
+
+// Each segment can have different floor/plane configuration
+struct GeometrySegment {
+    SegmentGeometry geo;
 
     // Floor data
     float yval;
@@ -25,6 +29,8 @@ struct GeometrySegment {
     float xmax;
 
     // Segment data
+    // 1 means floor plane present
+    // 0 means empty space
     std::vector<uint8_t> data;
     uint32_t gl_vao = 0;
     uint32_t gl_vbo = 0;
@@ -62,10 +68,10 @@ enum class MeshVisualMode : uint8_t {
     SlotWire,
 };
 
-void GenerateSegmentSelectionModel(GeometrySegment const& seg);
-void GenerateSegmentOutlineModel(GeometrySegment const& seg);
-void GenerateSegmentSectorWireModel(GeometrySegment const& seg);
-void GenerateSegmentSlotWireModel(GeometrySegment const& seg);
+void GenerateSegmentSelectionModel(SegmentGeometry const& geo);
+void GenerateSegmentOutlineModel(SegmentGeometry const& geo);
+void GenerateSegmentSectorWireModel(SegmentGeometry const& geo);
+void GenerateSegmentSlotWireModel(SegmentGeometry const& geo);
 
 // Gets geometric properties of the main floor (on the bottom)
 void GetFloorProperties(GeometrySegment& seg);

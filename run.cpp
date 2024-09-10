@@ -18,10 +18,10 @@ LevelInfo LoadBlankLevel() {
 
     GeometrySegment& seg = *info.segments.emplace_back(new GeometrySegment);
     // 5 planes per 4 floors per sector
-    seg.floors = 4;
-    seg.floor_planes = 5;
-    seg.sectors = 3;
-    seg.data.resize(seg.floors * seg.floor_planes * seg.sectors, 1);
+    seg.geo.floors = 4;
+    seg.geo.floor_planes = 5;
+    seg.geo.sectors = 3;
+    seg.data.resize(seg.geo.floors * seg.geo.floor_planes * seg.geo.sectors, 1);
     GetFloorProperties(seg);
     return info;
 }
@@ -41,16 +41,16 @@ static Col const sColorMap[] = {
 void GenerateLevelSceneModel(GeometrySegment& seg) {
     glBindBuffer(GL_ARRAY_BUFFER, seg.gl_vbo);
 
-    auto meshbuf = std::unique_ptr<float[]>(new float[2 * 18 * seg.sectors * seg.floors * seg.floor_planes]);
+    auto meshbuf = std::unique_ptr<float[]>(new float[2 * 18 * seg.geo.sectors * seg.geo.floors * seg.geo.floor_planes]);
     float* meshptr = meshbuf.get(); // current XYZ vertex of mesh
     uint8_t const* cursor = seg.data.data();
 
-    for (size_t z = 0; z < seg.sectors; ++z) {
+    for (size_t z = 0; z < seg.geo.sectors; ++z) {
         // Generate mesh of quads
         // First floor must be flat horizontal, so phase offset is phi/2
         // where phi = 2pi/num_floors
-        double const phi = 2*C_PI / seg.floors;
-        for (uint32_t i = 0; i < seg.floors; ++i) {
+        double const phi = 2*C_PI / seg.geo.floors;
+        for (uint32_t i = 0; i < seg.geo.floors; ++i) {
             double const angle = i*phi;
             float xl, yl, xr, yr; // XY pos of left/right corners
             xl =  std::sin(angle - phi/2);
@@ -58,7 +58,7 @@ void GenerateLevelSceneModel(GeometrySegment& seg) {
             xr =  std::sin(angle + phi/2);
             yr = -std::cos(angle + phi/2);
 
-            for (uint32_t j = 0; j < seg.floor_planes; ++j) {
+            for (uint32_t j = 0; j < seg.geo.floor_planes; ++j) {
                 uint8_t index = *cursor++;
                 if (index == 0)
                     continue;
@@ -67,10 +67,10 @@ void GenerateLevelSceneModel(GeometrySegment& seg) {
                 // XY = lerp(XY0, XY1, j/num_floor_planes)
                 float xp0, yp0, xp1, yp1;
                 float const j0 = j, j1 = j + 1;
-                xp0 = xl + (j0/seg.floor_planes) * (xr - xl);
-                yp0 = yl + (j0/seg.floor_planes) * (yr - yl);
-                xp1 = xl + (j1/seg.floor_planes) * (xr - xl);
-                yp1 = yl + (j1/seg.floor_planes) * (yr - yl);
+                xp0 = xl + (j0/seg.geo.floor_planes) * (xr - xl);
+                yp0 = yl + (j0/seg.geo.floor_planes) * (yr - yl);
+                xp1 = xl + (j1/seg.geo.floor_planes) * (xr - xl);
+                yp1 = yl + (j1/seg.geo.floor_planes) * (yr - yl);
 
                 // Append quad to the mesh (for now without element buffer; 36 floats per plane)
                 #define SET_COLOR \
@@ -119,13 +119,13 @@ void GenerateLevelSceneModel(GeometrySegment& seg) {
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * seg.vtx_count * 2 * 3, meshbuf.get(), GL_DYNAMIC_DRAW);
 }
 
-void GenerateSegmentSelectionModel(GeometrySegment const& seg) {
-    size_t const vtx_count = 6 * seg.floors;
+void GenerateSegmentSelectionModel(SegmentGeometry const& geo) {
+    size_t const vtx_count = 6 * geo.floors;
     auto meshbuf = std::unique_ptr<float[]>(new float[vtx_count * 2 * 3]);
     float* meshptr = meshbuf.get();
 
-    double const phi = 2*C_PI / seg.floors;
-    for (uint32_t floor = 0; floor != seg.floors; ++floor) {
+    double const phi = 2*C_PI / geo.floors;
+    for (uint32_t floor = 0; floor != geo.floors; ++floor) {
         double const angle = floor*phi;
         float xl, yl, xr, yr; // XY pos of left/right corners
         xl =  std::sin(angle - phi/2);
@@ -188,14 +188,14 @@ static constexpr Col cMeshOutlineColor = {0.8, 0.4, 0.2};
     *meshptr++ = cMeshOutlineColor[1]; \
     *meshptr++ = cMeshOutlineColor[2];
 
-void GenerateSegmentOutlineModel(GeometrySegment const& seg) {
-    size_t const vtx_count = 6 * seg.floors;
+void GenerateSegmentOutlineModel(SegmentGeometry const& geo) {
+    size_t const vtx_count = 6 * geo.floors;
 
     auto meshbuf = std::unique_ptr<float[]>(new float[vtx_count * 2 * 3]);
     float* meshptr = meshbuf.get();
 
-    double const phi = 2*C_PI / seg.floors;
-    for (uint32_t floor = 0; floor != seg.floors; ++floor) {
+    double const phi = 2*C_PI / geo.floors;
+    for (uint32_t floor = 0; floor != geo.floors; ++floor) {
         double const angle = floor*phi;
         float xl, yl, xr, yr; // XY pos of left/right corners
         xl =  std::sin(angle - phi/2);
@@ -240,17 +240,17 @@ void GenerateSegmentOutlineModel(GeometrySegment const& seg) {
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vtx_count * 2 * 3, meshbuf.get(), GL_DYNAMIC_DRAW);
 }
 
-void GenerateSegmentSectorWireModel(GeometrySegment const& seg);
-void GenerateSegmentSlotWireModel(GeometrySegment const& seg);
+void GenerateSegmentSectorWireModel(SegmentGeometry const& geo);
+void GenerateSegmentSlotWireModel(SegmentGeometry const& geo);
 
 #undef SET_COLOR
 
 void GetFloorProperties(GeometrySegment& seg) {
-    double const phi = C_PI / seg.floors;
+    double const phi = C_PI / seg.geo.floors;
     seg.yval = -std::cos(phi);
     seg.xmax =  std::sin(phi);
     seg.xmin = -seg.xmax;
-    seg.pwidth = 2*seg.xmax / seg.floor_planes;
+    seg.pwidth = 2*seg.xmax / seg.geo.floor_planes;
 }
 
 void GenerateCharacterModel(uint32_t vbo) {
@@ -287,9 +287,9 @@ void DumpLevelToFile(LevelInfo const& level, char const* fname) {
     for (auto& seg_ : level.segments) {
         GeometrySegment const& seg = *seg_;
         uint32_t const seg_hdr =
-            (seg.sectors & 0xFFFF) | ((seg.floor_planes & 0xFF) << 0x10) | ((seg.floors & 0xFF) << 0x18);
+            (seg.geo.sectors & 0xFFFF) | ((seg.geo.floor_planes & 0xFF) << 0x10) | ((seg.geo.floors & 0xFF) << 0x18);
         std::fwrite(&seg_hdr, sizeof(uint32_t), 1, file);
-        size_t const num_slots = seg.floors * seg.floor_planes * seg.sectors;
+        size_t const num_slots = seg.geo.floors * seg.geo.floor_planes * seg.geo.sectors;
         size_t const buf_size = (num_slots + 7) / 8; // Pack the slots in bitarray, padded with 0s if necessary
         uint8_t* buf = reinterpret_cast<uint8_t*>(alloca(buf_size));
         memset(buf, 0, buf_size);
@@ -319,10 +319,10 @@ bool LoadLevelFromFile(LevelInfo& level, char const* fname) {
         uint32_t seg_hdr;
         std::fread(&seg_hdr, sizeof(uint32_t), 1, file);
         auto& seg = *level.segments.emplace_back(new GeometrySegment);
-        seg.floors = (seg_hdr >> 0x18) & 0xFF;
-        seg.floor_planes = (seg_hdr >> 0x10) & 0xFF;
-        seg.sectors = seg_hdr & 0xFFFF;
-        size_t const num_slots = seg.floors * seg.floor_planes * seg.sectors;
+        seg.geo.floors = (seg_hdr >> 0x18) & 0xFF;
+        seg.geo.floor_planes = (seg_hdr >> 0x10) & 0xFF;
+        seg.geo.sectors = seg_hdr & 0xFFFF;
+        size_t const num_slots = seg.geo.floors * seg.geo.floor_planes * seg.geo.sectors;
         size_t const buf_size = (num_slots + 7) / 8;
         uint8_t* buf = reinterpret_cast<uint8_t*>(alloca(buf_size));
         std::fread(buf, 1, buf_size, file);
