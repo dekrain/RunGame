@@ -6,6 +6,7 @@
 #include <GL/glew.h>
 
 #include "event.hpp"
+#include "type_util.hpp"
 #include "util.hpp"
 #include "run.hpp"
 #include "wnd.hpp"
@@ -78,7 +79,7 @@ struct EditorState {
     MeshVisualMode segment_visual_mode;
     uint32_t segment_block_buffer;
     uint32_t segment_block_vao;
-    uint32_t segment_block_floors;
+    SegmentGeometry segment_block_geometry;
 };
 
 struct PlayingState {
@@ -105,7 +106,7 @@ static void editor_init(void* common_ctx, void* ctx) {
     glEnableVertexAttribArray(1);
 
     s_ctx.curZ = 0.0f;
-    s_ctx.segment_block_floors = 0;
+    s_ctx.segment_block_geometry.floors = 0;
     s_ctx.segment_block_mode = SegmentBufferMode::Solid;
     s_ctx.segment_visual_mode = MeshVisualMode::Outline;
 }
@@ -154,6 +155,14 @@ static void editor_input(WinEvent const& ev, void* ctx) {
                     seg.data[state.cur_sector * num_slots + state.cur_spot] ^= 2;
                     GenerateLevelSceneModel(seg);
                     break;
+            }
+            break;
+        }
+        case LogicalKey::O: {
+            if (state.segment_visual_mode == MeshVisualMode::SlotWire) {
+                state.segment_visual_mode = MeshVisualMode::None;
+            } else {
+                enum_ref_cast(state.segment_visual_mode) += 1;
             }
             break;
         }
@@ -382,10 +391,10 @@ static void editor_render(void* ctx) {
     glUseProgram(state.common->shader.prog);
     if (state.segment_mode == SegmentMode::Segment) {
         SegmentGeometry const& seg = state.common->level.segments[state.cur_segment]->geo;
-        if (state.segment_block_floors != seg.floors or state.segment_block_mode != SegmentBufferMode::Solid) {
+        if (state.segment_block_geometry.floors != seg.floors or state.segment_block_mode != SegmentBufferMode::Solid) {
             glBindBuffer(GL_ARRAY_BUFFER, state.segment_block_buffer);
             GenerateSegmentSelectionModel(seg);
-            state.segment_block_floors = seg.floors;
+            state.segment_block_geometry.floors = seg.floors;
             state.segment_block_mode = SegmentBufferMode::Solid;
         }
         RenderLevelWithSegment(*state.common, state.cur_segment, state.segment_block_vao, state.curZ);
@@ -395,19 +404,37 @@ static void editor_render(void* ctx) {
             auto const& level = state.common->level;
             glBindBuffer(GL_ARRAY_BUFFER, state.segment_block_buffer);
             SegmentGeometry const& seg = level.segments[state.cur_segment]->geo;
-            bool regen = state.segment_block_floors != seg.floors;
+            bool regen;
+            uint32_t line_count;
             switch (state.segment_visual_mode) {
             case MeshVisualMode::None: break;
             case MeshVisualMode::Outline:
-                regen |= state.segment_block_mode != SegmentBufferMode::Outline;
+                regen = state.segment_block_mode != SegmentBufferMode::Outline or state.segment_block_geometry.floors != seg.floors;
+                line_count = 3 * seg.floors;
                 if (regen) {
                     GenerateSegmentOutlineModel(seg);
                     state.segment_block_mode = SegmentBufferMode::Outline;
-                    state.segment_block_floors = seg.floors;
+                    state.segment_block_geometry.floors = seg.floors;
                 }
                 break;
-            case MeshVisualMode::SectorWire: break;
-            case MeshVisualMode::SlotWire: break;
+            case MeshVisualMode::SectorWire:
+                regen = state.segment_block_mode != SegmentBufferMode::SectorWire or state.segment_block_geometry != seg;
+                line_count = (seg.sectors + 2) * seg.floors;
+                if (regen) {
+                    GenerateSegmentSectorWireModel(seg);
+                    state.segment_block_mode = SegmentBufferMode::SectorWire;
+                    state.segment_block_geometry = seg;
+                }
+                break;
+            case MeshVisualMode::SlotWire:
+                regen = state.segment_block_mode != SegmentBufferMode::SlotWire or state.segment_block_geometry != seg;
+                line_count = (seg.sectors + 1 + seg.floor_planes) * seg.floors;
+                if (regen) {
+                    GenerateSegmentSlotWireModel(seg);
+                    state.segment_block_mode = SegmentBufferMode::SlotWire;
+                    state.segment_block_geometry = seg;
+                }
+                break;
             }
 
             float curZ = state.curZ;
@@ -418,9 +445,12 @@ static void editor_render(void* ctx) {
             auto const& shader = state.common->shader;
             glBindVertexArray(state.segment_block_vao);
             glUniform3f(shader.loc_uDisplacement, 0.f, 0.f, curZ);
-            glUniform3f(shader.loc_uScale, 1.f, 1.f, sLevelZScale * seg.sectors);
-            //glUniform3f(shader.loc_uScale, 1.f, 1.f, sLevelZScale);
-            glDrawArrays(GL_LINES, 0, 6 * seg.floors);
+            if (state.segment_visual_mode == MeshVisualMode::Outline) {
+                glUniform3f(shader.loc_uScale, 1.f, 1.f, sLevelZScale * seg.sectors);
+            } else {
+                glUniform3f(shader.loc_uScale, 1.f, 1.f, sLevelZScale);
+            }
+            glDrawArrays(GL_LINES, 0, 2 * line_count);
         }
     }
 }

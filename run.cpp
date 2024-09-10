@@ -1,5 +1,6 @@
 #include "run.hpp"
 
+//#include <cassert>
 #include <cstring>
 #include <cmath>
 #include <cstdio>
@@ -178,6 +179,7 @@ void GenerateSegmentSelectionModel(SegmentGeometry const& geo) {
         *meshptr++ = 0.f;
     }
 
+    //assert(static_cast<size_t>(meshptr - meshbuf.get()) == vtx_count * 2 * 3);
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vtx_count * 2 * 3, meshbuf.get(), GL_DYNAMIC_DRAW);
 }
 
@@ -189,9 +191,9 @@ static constexpr Col cMeshOutlineColor = {0.8, 0.4, 0.2};
     *meshptr++ = cMeshOutlineColor[2];
 
 void GenerateSegmentOutlineModel(SegmentGeometry const& geo) {
-    size_t const vtx_count = 6 * geo.floors;
+    size_t const line_count = 3 * geo.floors;
 
-    auto meshbuf = std::unique_ptr<float[]>(new float[vtx_count * 2 * 3]);
+    auto meshbuf = std::unique_ptr<float[]>(new float[line_count * 2 * 3 * 2]);
     float* meshptr = meshbuf.get();
 
     double const phi = 2*C_PI / geo.floors;
@@ -237,11 +239,105 @@ void GenerateSegmentOutlineModel(SegmentGeometry const& geo) {
         SET_COLOR
     }
 
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vtx_count * 2 * 3, meshbuf.get(), GL_DYNAMIC_DRAW);
+    //assert(static_cast<size_t>(meshptr - meshbuf.get()) == line_count * 2 * 3 * 2);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * line_count * 2 * 3 * 2, meshbuf.get(), GL_DYNAMIC_DRAW);
 }
 
-void GenerateSegmentSectorWireModel(SegmentGeometry const& geo);
-void GenerateSegmentSlotWireModel(SegmentGeometry const& geo);
+void GenerateSegmentSectorWireModel(SegmentGeometry const& geo) {
+    size_t const line_count = (geo.sectors + 2) * geo.floors;
+
+    auto meshbuf = std::unique_ptr<float[]>(new float[line_count * 2 * 3 * 2]);
+    float* meshptr = meshbuf.get();
+
+    double const phi = 2*C_PI / geo.floors;
+    for (uint32_t floor = 0; floor != geo.floors; ++floor) {
+        double const angle = floor*phi;
+        float xl, yl, xr, yr; // XY pos of left/right corners
+        xl =  std::sin(angle - phi/2);
+        yl = -std::cos(angle - phi/2);
+        xr =  std::sin(angle + phi/2);
+        yr = -std::cos(angle + phi/2);
+
+        // Side line
+        *meshptr++ = xl;
+        *meshptr++ = yl;
+        *meshptr++ = 0.f;
+        SET_COLOR
+
+        *meshptr++ = xl;
+        *meshptr++ = yl;
+        *meshptr++ = -(float)geo.sectors;
+        SET_COLOR
+
+        // Sector lines (one more line at the last sector)
+        for (uint32_t z = 0; z <= geo.sectors; ++z) {
+            *meshptr++ = xl;
+            *meshptr++ = yl;
+            *meshptr++ = -(float)z;
+            SET_COLOR
+
+            *meshptr++ = xr;
+            *meshptr++ = yr;
+            *meshptr++ = -(float)z;
+            SET_COLOR
+        }
+    }
+
+    //assert(static_cast<size_t>(meshptr - meshbuf.get()) == line_count * 2 * 3 * 2);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * line_count * 2 * 3 * 2, meshbuf.get(), GL_DYNAMIC_DRAW);
+}
+
+void GenerateSegmentSlotWireModel(SegmentGeometry const& geo) {
+    size_t const line_count = (geo.sectors + 1 + geo.floor_planes) * geo.floors;
+
+    auto meshbuf = std::unique_ptr<float[]>(new float[line_count * 2 * 3 * 2]);
+    float* meshptr = meshbuf.get();
+
+    double const phi = 2*C_PI / geo.floors;
+    for (uint32_t floor = 0; floor != geo.floors; ++floor) {
+        double const angle = floor*phi;
+        float xl, yl, xr, yr; // XY pos of left/right corners
+        xl =  std::sin(angle - phi/2);
+        yl = -std::cos(angle - phi/2);
+        xr =  std::sin(angle + phi/2);
+        yr = -std::cos(angle + phi/2);
+
+        // Side/floor plane lines
+        for (uint32_t part = 0; part < geo.floor_planes; ++part) {
+            // Interpolate the vertices
+            // XY = lerp(XY0, XY1, j/num_floor_planes)
+            float const p0 = part;
+            float const xp = xl + (p0/geo.floor_planes) * (xr - xl);
+            float const yp = yl + (p0/geo.floor_planes) * (yr - yl);
+
+            *meshptr++ = xp;
+            *meshptr++ = yp;
+            *meshptr++ = 0.f;
+            SET_COLOR
+
+            *meshptr++ = xp;
+            *meshptr++ = yp;
+            *meshptr++ = -(float)geo.sectors;
+            SET_COLOR
+        }
+
+        // Sector lines (one more line at the last sector)
+        for (uint32_t z = 0; z <= geo.sectors; ++z) {
+            *meshptr++ = xl;
+            *meshptr++ = yl;
+            *meshptr++ = -(float)z;
+            SET_COLOR
+
+            *meshptr++ = xr;
+            *meshptr++ = yr;
+            *meshptr++ = -(float)z;
+            SET_COLOR
+        }
+    }
+
+    //assert(static_cast<size_t>(meshptr - meshbuf.get()) == line_count * 2 * 3 * 2);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * line_count * 2 * 3 * 2, meshbuf.get(), GL_DYNAMIC_DRAW);
+}
 
 #undef SET_COLOR
 

@@ -17,7 +17,8 @@ While in editor mode (default):
 -   [`P`] Save current level to `level.dat`
 -   [`L`] Load current level from `level.dat`
 -   [_Arrow keys_] Select tile
--   [`m`] Toggle selection mode
+-   [`M`] Toggle selection mode
+-   [`O`] Toggle segment mesh visualization mode
 
 While in playing mode:
 -   Currently nothing (change state to reset game)
